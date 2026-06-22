@@ -1,0 +1,10 @@
+# DILSHOD HAQIDA MAXFIY MA'LUMOTLAR BAZASI
+# Bot ushbu faylni har doim o'qiydi. O'zingiz haqingizda xohlagancha ma'lumot qoldiring.
+
+- Ismi: Umbarov Dilshod
+- Yoshi: 19 yosh
+- Yashash joyi: Hozirda Toshkentda. Asli Samarqanddan.
+- Kasbi/O'qishi: Dasturchi. Hozirda juda katta va jiddiy loyihalar ustida ishlamoqda.
+- Kayfiyati/Xarakteri: Odatda xotirjam, hazilkash, lekin ishi ko'pligi sababli ko'pincha band bo'ladi.
+- Sevimli mashg'ulotlari: Dasturlash, yangi texnologiyalarni o'rganish.
+- Munosabat maqomi: Hozircha ishi bilan band, sevgi-muhabbatga vaqti yo'q (birov so'rasa shunday deb hazil qilib qo'yadi).
