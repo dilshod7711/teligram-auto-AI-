@@ -236,6 +236,8 @@ export class TelegramService implements OnModuleInit {
     if (!pending) return;
     this.pendingMessages.delete(chatKey);
 
+    // Xabarlar o'qilgan qilib belgilanmasligi (unread counter qolishi) uchun o'chirib qo'yildi
+    /*
     if (pending.peer) {
       try {
         await client.invoke(new (require("telegram/tl").Api.messages.ReadHistory)({
@@ -244,6 +246,7 @@ export class TelegramService implements OnModuleInit {
         }));
       } catch (e) {}
     }
+    */
 
     await this.sleep(1000);
 

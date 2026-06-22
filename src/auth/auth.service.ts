@@ -69,7 +69,7 @@ export class AuthService {
     firstName: string,
     lastName: string,
     knowledge: string
-  ): Promise<{ success: boolean; botAccountId: Int }> {
+  ): Promise<{ success: boolean; botAccountId: number }> {
     const client = this.pendingClients.get(phoneNumber);
     if (!client) {
       throw new BadRequestException('Session expired or code not requested. Please request code again.');
