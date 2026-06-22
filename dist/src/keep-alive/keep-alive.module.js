@@ -6,23 +6,15 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AppModule = void 0;
+exports.KeepAliveModule = void 0;
 const common_1 = require("@nestjs/common");
-const config_1 = require("@nestjs/config");
-const telegram_module_1 = require("./telegram/telegram.module");
-const keep_alive_module_1 = require("./keep-alive/keep-alive.module");
-const schedule_1 = require("@nestjs/schedule");
-let AppModule = class AppModule {
+const keep_alive_service_1 = require("./keep-alive.service");
+let KeepAliveModule = class KeepAliveModule {
 };
-exports.AppModule = AppModule;
-exports.AppModule = AppModule = __decorate([
+exports.KeepAliveModule = KeepAliveModule;
+exports.KeepAliveModule = KeepAliveModule = __decorate([
     (0, common_1.Module)({
-        imports: [
-            config_1.ConfigModule.forRoot({ isGlobal: true }),
-            schedule_1.ScheduleModule.forRoot(),
-            telegram_module_1.TelegramModule,
-            keep_alive_module_1.KeepAliveModule,
-        ],
+        providers: [keep_alive_service_1.KeepAliveService],
     })
-], AppModule);
-//# sourceMappingURL=app.module.js.map
+], KeepAliveModule);
+//# sourceMappingURL=keep-alive.module.js.map
