@@ -2,7 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { TelegramModule } from "./telegram/telegram.module";
 import { KeepAliveModule } from "./keep-alive/keep-alive.module";
-
+import { AppController } from "./app.controller";
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -12,5 +12,6 @@ import { ScheduleModule } from '@nestjs/schedule';
     TelegramModule,
     KeepAliveModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}
