@@ -6,9 +6,4 @@ export class AppController {
   getHealth(): string {
     return 'OK';
   }
-
-  @Get()
-  getRoot(): string {
-    return 'Web app is running!';
-  }
 }

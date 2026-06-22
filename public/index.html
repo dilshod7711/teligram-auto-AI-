@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telegram AI Assistant - Login</title>
+  <style>
+    :root {
+      --primary: #0088cc;
+      --primary-hover: #0077b3;
+      --bg: #f4f4f9;
+      --card-bg: #ffffff;
+      --text: #333333;
+      --text-muted: #777777;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: var(--card-bg);
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 400px;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-top: 0;
+      text-align: center;
+    }
+    p {
+      text-align: center;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin-top: 1rem;
+    }
+    button:hover {
+      background-color: var(--primary-hover);
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .hidden {
+      display: none;
+    }
+    .error {
+      color: #e74c3c;
+      font-size: 0.85rem;
+      text-align: center;
+      margin-top: 1rem;
+    }
+    .success {
+      color: #2ecc71;
+      font-size: 0.85rem;
+      text-align: center;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h1>Telegram AI Yordamchi</h1>
+    <p>O'z akkauntingizni ulang va sun'iy intellektni faollashtiring</p>
+
+    <!-- Phone Step -->
+    <div id="phoneStep">
+      <div class="form-group">
+        <label for="phoneNumber">Telegram Telefon Raqamingiz</label>
+        <input type="text" id="phoneNumber" placeholder="+998901234567" required>
+      </div>
+      <button id="sendCodeBtn" onclick="sendCode()">Kodni Yuborish</button>
+      <div id="phoneError" class="error"></div>
+    </div>
+
+    <!-- OTP & Profile Step -->
+    <div id="otpStep" class="hidden">
+      <div class="form-group">
+        <label for="code">Tasdiqlash KODI (Telegramdan keladi)</label>
+        <input type="text" id="code" placeholder="12345" required>
+      </div>
+      <div class="form-group">
+        <label for="firstName">Ismingiz</label>
+        <input type="text" id="firstName" placeholder="Dilshod" required>
+      </div>
+      <div class="form-group">
+        <label for="lastName">Familiyangiz</label>
+        <input type="text" id="lastName" placeholder="Umarov" required>
+      </div>
+      <div class="form-group">
+        <label for="knowledge">AI uchun siz haqingizda ma'lumot (Knowledge base)</label>
+        <textarea id="knowledge" placeholder="Men Dasturchiman, 24 yoshman. Odamlarga salom berib gaplashaman..." required></textarea>
+      </div>
+      <button id="loginBtn" onclick="login()">Tizimga Kirish</button>
+      <div id="otpError" class="error"></div>
+    </div>
+
+    <div id="successStep" class="hidden">
+      <h2 style="color: #2ecc71; text-align: center;">Muvaffaqiyatli ulandi! ✅</h2>
+      <p>Endi Telegram orqali sizga yozganlarga AI yordamchingiz javob beradi.</p>
+    </div>
+  </div>
+
+  <script>
+    let phoneCodeHash = '';
+
+    async function sendCode() {
+      const phoneNumber = document.getElementById('phoneNumber').value.trim();
+      const btn = document.getElementById('sendCodeBtn');
+      const err = document.getElementById('phoneError');
+      
+      if (!phoneNumber) {
+        err.innerText = "Telefon raqamni kiriting!";
+        return;
+      }
+
+      err.innerText = '';
+      btn.disabled = true;
+      btn.innerText = "Yuborilmoqda...";
+
+      try {
+        const response = await fetch('/api/auth/send-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneNumber })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Xatolik yuz berdi');
+        }
+
+        phoneCodeHash = data.phoneCodeHash;
+        
+        document.getElementById('phoneStep').classList.add('hidden');
+        document.getElementById('otpStep').classList.remove('hidden');
+
+      } catch (error) {
+        err.innerText = error.message;
+        btn.disabled = false;
+        btn.innerText = "Kodni Yuborish";
+      }
+    }
+
+    async function login() {
+      const phoneNumber = document.getElementById('phoneNumber').value.trim();
+      const code = document.getElementById('code').value.trim();
+      const firstName = document.getElementById('firstName').value.trim();
+      const lastName = document.getElementById('lastName').value.trim();
+      const knowledge = document.getElementById('knowledge').value.trim();
+      
+      const btn = document.getElementById('loginBtn');
+      const err = document.getElementById('otpError');
+
+      if (!code || !firstName || !knowledge) {
+        err.innerText = "Barcha maydonlarni to'ldiring!";
+        return;
+      }
+
+      err.innerText = '';
+      btn.disabled = true;
+      btn.innerText = "Kutilmoqda...";
+
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phoneNumber,
+            phoneCodeHash,
+            code,
+            firstName,
+            lastName,
+            knowledge
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Xatolik yuz berdi');
+        }
+
+        document.getElementById('otpStep').classList.add('hidden');
+        document.getElementById('successStep').classList.remove('hidden');
+
+      } catch (error) {
+        err.innerText = error.message;
+        btn.disabled = false;
+        btn.innerText = "Tizimga Kirish";
+      }
+    }
+  </script>
+</body>
+</html>

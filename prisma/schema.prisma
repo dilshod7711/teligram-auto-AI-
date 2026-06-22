@@ -8,6 +8,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model BotAccount {
+  id            Int       @id @default(autoincrement())
+  phoneNumber   String    @unique
+  sessionString String
+  firstName     String
+  lastName      String
+  knowledge     String
+  createdAt     DateTime  @default(now())
+  messages      Message[]
+}
+
 model User {
   id        String    @id
   firstName String?
@@ -17,10 +28,12 @@ model User {
 }
 
 model Message {
-  id        Int      @id @default(autoincrement())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  role      String   // "user" or "model"
-  content   String
-  createdAt DateTime @default(now())
+  id           Int        @id @default(autoincrement())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  botAccountId Int
+  botAccount   BotAccount @relation(fields: [botAccountId], references: [id], onDelete: Cascade)
+  role         String     // "user" or "model"
+  content      String
+  createdAt    DateTime   @default(now())
 }

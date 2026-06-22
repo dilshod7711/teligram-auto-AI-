@@ -23,39 +23,33 @@ export class AiService {
     this.gemini = new GoogleGenAI({ apiKey: geminiKey || '' });
   }
 
-  private getSystemPrompt(options?: { isContact: boolean; isGroup: boolean; isFirstTime: boolean }): string {
-    let knowledge = '';
-    try {
-      const p = path.join(process.cwd(), 'knowledge.txt');
-      if (fs.existsSync(p)) {
-        knowledge = fs.readFileSync(p, 'utf-8');
-      }
-    } catch (e) {
-      this.logger.warn('knowledge.txt oqishda xatolik');
-    }
-
+  private getSystemPrompt(
+    botFirstName: string,
+    botKnowledge: string,
+    options?: { isContact: boolean; isGroup: boolean; isFirstTime: boolean }
+  ): string {
     return `
-Sen "D" — Dilshodning shaxsiy AI yordamchisisisan. Lekin o'zingni Dilshoddek tutasan!
+Sen "D" — ${botFirstName}ning shaxsiy AI yordamchisisisan. Lekin o'zingni ${botFirstName}dek tutasan!
 Sening YAGONA vazifang: Xabarlarga xuddi TIRIK INSON kabi, tabiiy javob berish. AI ekanligingni bildirma.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🧍 DILSHOD HAQIDA BAZA (SHU YERDAN O'QIB JAVOB BER)
+🧍 ${botFirstName.toUpperCase()} HAQIDA BAZA (SHU YERDAN O'QIB JAVOB BER)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${knowledge}
+${botKnowledge}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🛑 SHAXSIYAT VA KASB HAQIDA QAT'IY QOIDALAR
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - O'zingizni aslo "dasturchi" yoki "frontender" deb tanishtirmang.
-- Agar kimdir to'g'ridan-to'g'ri "Kimsan?", "Siz kimsiz?", "Sen kimsan?" yoki "Dilshodmisan?" deb so'rasa yoki sening shaxsiyatingga shubha qilsa, doim quyidagicha javob berishingiz SHART:
-  "Uzr, men Dilshodni nomidan yozyapman, men uning yordamchisiman. Nima muammo edi, aytib qo'ysangiz o'zlariga xabar berib qo'yaman."
+- Agar kimdir to'g'ridan-to'g'ri "Kimsan?", "Siz kimsiz?", "Sen kimsan?" yoki "${botFirstName}misan?" deb so'rasa yoki sening shaxsiyatingga shubha qilsa, doim quyidagicha javob berishingiz SHART:
+  "Uzr, men ${botFirstName}ni nomidan yozyapman, men uning yordamchisiman. Nima muammo edi, aytib qo'ysangiz o'zlariga xabar berib qo'yaman."
 - Boshqa payt odatiy suhbat qilavering.
 
 ${options?.isFirstTime && (!options?.isContact || options?.isGroup) ? `
 ⚠️ DIQQAT: YORDAMCHI REJIMI!
 Bu odam yuboruvchilar ro'yxatida yo'q (tanish emas) va senga birinchi marta yozyapti. Yoki bu guruhda senga birinchi marta murojaat qilinmoqda.
-Bunday holatda DILSHODDEK EMAS, balki uning RASMIY YORDAMCHISIDEK javob berishing SHART!
-Javob namunasi: "Assalomu alaykum. Dilshodbek hozir band edilar, men u kishining yordamchilariman. Uzr, kim deb qo'yay? Nima masala edi?"
+Bunday holatda ${botFirstName.toUpperCase()}DEK EMAS, balki uning RASMIY YORDAMCHISIDEK javob berishing SHART!
+Javob namunasi: "Assalomu alaykum. ${botFirstName} hozir band edilar, men u kishining yordamchilariman. Uzr, kim deb qo'yay? Nima masala edi?"
 Ushbu qoidani BIZBUZMASDAN bajaring! (Faqat shu xabarga).
 ` : ''}
 
@@ -92,7 +86,8 @@ AI liging bilinmasin.
   async generateReply(
     history: { role: 'user' | 'model', content: string }[], 
     currentParts: MessagePart[],
-    userName?: string,
+    userName: string | undefined,
+    botAccount: { firstName: string, knowledge: string },
     options?: { isContact: boolean; isGroup: boolean; isFirstTime: boolean }
   ): Promise<{ text: string; audioBuffer?: Buffer; scheduleInfo?: { minutes: number; text: string }; reactionEmoji?: string }> {
     
@@ -118,7 +113,7 @@ AI liging bilinmasin.
         model: 'gemini-2.5-flash',
         contents: formattedHistory,
         config: {
-          systemInstruction: this.getSystemPrompt(options),
+          systemInstruction: this.getSystemPrompt(botAccount.firstName, botAccount.knowledge, options),
           temperature: 0.8,
           maxOutputTokens: 300,
         }

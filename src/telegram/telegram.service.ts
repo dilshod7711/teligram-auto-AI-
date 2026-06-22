@@ -4,7 +4,7 @@ import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { NewMessage, NewMessageEvent } from "telegram/events";
 import { AiService, MessagePart } from "../ai/ai.service";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, BotAccount } from "@prisma/client";
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -13,12 +13,13 @@ const prisma = new PrismaClient();
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
-  private client: TelegramClient;
-  private me: any;
+  private clients = new Map<number, TelegramClient>();
   private readonly logger = new Logger(TelegramService.name);
 
   private readonly MAX_HISTORY = 40;
+  private readonly DEBOUNCE_TIME = 5000;
 
+  // We need to partition pending messages by botAccountId as well
   private pendingMessages = new Map<string, { 
     parts: MessagePart[], 
     timer: NodeJS.Timeout, 
@@ -28,8 +29,8 @@ export class TelegramService implements OnModuleInit {
     isContact: boolean,
     isGroup: boolean
   }>();
-  private readonly DEBOUNCE_TIME = 5000;
-  private botSentMessageIds = new Set<number>();
+  
+  private botSentMessageIds = new Set<string>();
 
   constructor(
     private configService: ConfigService,
@@ -37,67 +38,95 @@ export class TelegramService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    const accounts = await prisma.botAccount.findMany();
+    this.logger.log(`Found ${accounts.length} bot accounts in database.`);
+    
+    for (const account of accounts) {
+      await this.startClientForAccount(account);
+    }
+  }
+
+  async startClientForAccount(account: BotAccount) {
+    if (this.clients.has(account.id)) {
+      this.logger.warn(`Client for account ${account.phoneNumber} already running.`);
+      return;
+    }
+
     const apiId = Number(this.configService.get("TELEGRAM_API_ID"));
     const apiHash = this.configService.get<string>("TELEGRAM_API_HASH");
-    const sessionString = this.configService.get<string>("TELEGRAM_STRING_SESSION");
 
-    this.client = new TelegramClient(
-      new StringSession(sessionString),
+    if (!apiId || !apiHash) {
+      this.logger.error("TELEGRAM_API_ID or TELEGRAM_API_HASH missing in .env");
+      return;
+    }
+
+    const client = new TelegramClient(
+      new StringSession(account.sessionString),
       apiId,
-      apiHash!,
+      apiHash,
       { connectionRetries: 5 }
     );
 
-    await this.client.connect();
-    this.me = await this.client.getMe();
-    this.logger.log(`Telegram userbot ulandi ✅ (User: ${this.me.firstName})`);
+    try {
+      await client.connect();
+      const me = await client.getMe();
+      this.clients.set(account.id, client);
+      this.logger.log(`Telegram userbot ulandi ✅ (App: ${account.firstName}, TG User: ${(me as any).firstName})`);
 
-    this.listenForRawEvents();
-    this.listenForMessages();
+      this.listenForRawEvents(client, account.id);
+      this.listenForMessages(client, account, me);
+    } catch (e: any) {
+      this.logger.error(`Failed to start client for ${account.phoneNumber}: ${e.message}`);
+    }
   }
 
-  private findPendingKeyByPeer(peerId: string): string | undefined {
+  private findPendingKeyByPeer(accountId: number, peerId: string): string | undefined {
+    const prefix = `${accountId}_`;
     for (const [key, pending] of this.pendingMessages.entries()) {
-      if (key.includes(peerId) || pending.peer?.id?.toString() === peerId) {
+      if (!key.startsWith(prefix)) continue;
+      if (key.includes(`_${peerId}`) || pending.peer?.id?.toString() === peerId) {
         return key;
       }
     }
     return undefined;
   }
 
-  private listenForRawEvents() {
-    this.client.addEventHandler((update: any) => {
+  private listenForRawEvents(client: TelegramClient, accountId: number) {
+    client.addEventHandler((update: any) => {
       if (!update) return;
       if (update.className === 'UpdateReadHistoryInbox' || update.className === 'UpdateReadChannelInbox' || update.className === 'UpdateUserTyping') {
         const peerId = update.peer?.userId?.toString() || update.peer?.channelId?.toString() || update.peer?.chatId?.toString();
         if (peerId) {
-          const chatKey = this.findPendingKeyByPeer(peerId);
+          const chatKey = this.findPendingKeyByPeer(accountId, peerId);
           if (chatKey && this.pendingMessages.has(chatKey)) {
             clearTimeout(this.pendingMessages.get(chatKey)!.timer);
             this.pendingMessages.delete(chatKey);
-            this.logger.log(`📱 Siz chatga kirdingiz yoki yozdingiz. Chat: ${peerId} uchun AI javobi to'xtatildi.`);
+            this.logger.log(`📱 Siz chatga kirdingiz yoki yozdingiz. Chat: ${peerId} uchun AI javobi to'xtatildi. (Account: ${accountId})`);
           }
         }
       }
     });
   }
 
-  private listenForMessages() {
-    this.client.addEventHandler(
+  private listenForMessages(client: TelegramClient, account: BotAccount, me: any) {
+    client.addEventHandler(
       async (event: NewMessageEvent) => {
         const message = event.message;
 
+        // Global unique ID for tracking sent messages
+        const globalMsgId = `${account.id}_${message.id}`;
+
         if (message.out) {
-           if (this.botSentMessageIds.has(message.id)) {
-               this.botSentMessageIds.delete(message.id);
+           if (this.botSentMessageIds.has(globalMsgId)) {
+               this.botSentMessageIds.delete(globalMsgId);
            } else {
                const peerId = (message.peerId as any)?.userId?.toString() || (message.peerId as any)?.channelId?.toString() || (message.peerId as any)?.chatId?.toString();
                if (peerId) {
-                   const chatKey = this.findPendingKeyByPeer(peerId);
+                   const chatKey = this.findPendingKeyByPeer(account.id, peerId);
                    if (chatKey && this.pendingMessages.has(chatKey)) {
                        clearTimeout(this.pendingMessages.get(chatKey)!.timer);
                        this.pendingMessages.delete(chatKey);
-                       this.logger.log(`📱 Siz qo'lda xabar yozdingiz. AI to'xtatildi.`);
+                       this.logger.log(`📱 Siz qo'lda xabar yozdingiz. AI to'xtatildi. (Account: ${account.id})`);
                    }
                }
            }
@@ -109,13 +138,13 @@ export class TelegramService implements OnModuleInit {
         if (message.isPrivate) {
           shouldReply = true;
         } else {
-          // Guruh xabarlari: agar sizga reply qilsa yoki @mension qilsa
+          // Guruh xabarlari
           if (message.mentioned) {
              shouldReply = true;
           } else if (message.replyTo) {
              try {
                 const repliedMsg = await message.getReplyMessage() as any;
-                if (repliedMsg && repliedMsg.senderId?.toString() === this.me.id.toString()) {
+                if (repliedMsg && repliedMsg.senderId?.toString() === me.id.toString()) {
                   shouldReply = true;
                 }
              } catch (e) {}
@@ -164,16 +193,16 @@ export class TelegramService implements OnModuleInit {
         const peer = await message.getChat();
         if (!peer) return;
 
-
-
-        const chatKey = message.isPrivate ? senderId : `${peer.id.toString()}_${senderId}`;
+        // Make chatKey unique per bot account
+        const peerIdentifier = message.isPrivate ? senderId : `${peer.id.toString()}_${senderId}`;
+        const chatKey = `${account.id}_${peerIdentifier}`;
 
         if (this.pendingMessages.has(chatKey)) {
           const pending = this.pendingMessages.get(chatKey)!;
           pending.parts.push(...newParts);
           pending.lastMessageId = message.id;
           clearTimeout(pending.timer);
-          pending.timer = setTimeout(() => this.processGroupedMessages(chatKey, senderId), this.DEBOUNCE_TIME);
+          pending.timer = setTimeout(() => this.processGroupedMessages(client, account, chatKey, senderId), this.DEBOUNCE_TIME);
         } else {
           await this.ensureUserExists(senderId, firstName);
 
@@ -184,7 +213,7 @@ export class TelegramService implements OnModuleInit {
             lastMessageId: message.id,
             isContact,
             isGroup,
-            timer: setTimeout(() => this.processGroupedMessages(chatKey, senderId), this.DEBOUNCE_TIME)
+            timer: setTimeout(() => this.processGroupedMessages(client, account, chatKey, senderId), this.DEBOUNCE_TIME)
           });
         }
       },
@@ -202,26 +231,24 @@ export class TelegramService implements OnModuleInit {
     } catch(e) {}
   }
 
-  private async processGroupedMessages(chatKey: string, senderId: string) {
+  private async processGroupedMessages(client: TelegramClient, account: BotAccount, chatKey: string, senderId: string) {
     const pending = this.pendingMessages.get(chatKey);
     if (!pending) return;
     this.pendingMessages.delete(chatKey);
 
-    // Xabarni o'qilgan qilish (ReadHistory)
     if (pending.peer) {
       try {
-        await this.client.invoke(new (require("telegram/tl").Api.messages.ReadHistory)({
+        await client.invoke(new (require("telegram/tl").Api.messages.ReadHistory)({
           peer: pending.peer,
           maxId: pending.lastMessageId,
         }));
       } catch (e) {}
     }
 
-    // O'qigandan so'ng xuddi odamdek ozgina o'ylab turish (1 soniya)
     await this.sleep(1000);
 
     const dbMessages = await prisma.message.findMany({
-      where: { userId: senderId },
+      where: { userId: senderId, botAccountId: account.id },
       orderBy: { createdAt: 'asc' },
       take: this.MAX_HISTORY
     });
@@ -235,18 +262,19 @@ export class TelegramService implements OnModuleInit {
     await prisma.message.create({
       data: {
         userId: senderId,
+        botAccountId: account.id,
         role: 'user',
         content: textOnly
       }
     });
 
-    this.logger.log(`📩 Xabar: ${pending.firstName ?? senderId} → "${textOnly.slice(0, 50)}"`);
+    this.logger.log(`📩 Xabar [Acct: ${account.id}]: ${pending.firstName ?? senderId} → "${textOnly.slice(0, 50)}"`);
 
     try {
       let isTyping = true;
       const typingInterval = setInterval(async () => {
         if (!isTyping) return;
-        await this.client.invoke(new (require("telegram/tl").Api.messages.SetTyping)({
+        await client.invoke(new (require("telegram/tl").Api.messages.SetTyping)({
           peer: pending.peer,
           action: new (require("telegram/tl").Api.SendMessageTypingAction)(),
         })).catch(() => {});
@@ -254,18 +282,21 @@ export class TelegramService implements OnModuleInit {
 
       const isFirstTime = dbMessages.length === 0;
 
-      const aiResponse = await this.aiService.generateReply(userHistory, pending.parts, pending.firstName, {
-        isContact: pending.isContact,
-        isGroup: pending.isGroup,
-        isFirstTime
-      });
+      // Pass account context to AI
+      const aiResponse = await this.aiService.generateReply(
+        userHistory, 
+        pending.parts, 
+        pending.firstName, 
+        { firstName: account.firstName, knowledge: account.knowledge },
+        { isContact: pending.isContact, isGroup: pending.isGroup, isFirstTime }
+      );
 
       isTyping = false;
       clearInterval(typingInterval);
 
       if (aiResponse.reactionEmoji) {
         try {
-          await this.client.invoke(new (require("telegram/tl").Api.messages.SendReaction)({
+          await client.invoke(new (require("telegram/tl").Api.messages.SendReaction)({
             peer: pending.peer,
             msgId: pending.lastMessageId,
             reaction: [new (require("telegram/tl").Api.ReactionEmoji)({ emoticon: aiResponse.reactionEmoji })]
@@ -279,7 +310,7 @@ export class TelegramService implements OnModuleInit {
       if (aiResponse.scheduleInfo) {
          const ms = aiResponse.scheduleInfo.minutes * 60 * 1000;
          setTimeout(async () => {
-            await this.client.sendMessage(pending.peer, { message: aiResponse.scheduleInfo!.text });
+            await client.sendMessage(pending.peer, { message: aiResponse.scheduleInfo!.text });
             this.logger.log(`⏰ Eslatma yuborildi: ${aiResponse.scheduleInfo!.text}`);
          }, ms);
       }
@@ -289,6 +320,7 @@ export class TelegramService implements OnModuleInit {
         await prisma.message.create({
           data: {
              userId: senderId,
+             botAccountId: account.id,
              role: 'model',
              content: aiResponse.text || '[Audio Javob]'
           }
@@ -296,12 +328,11 @@ export class TelegramService implements OnModuleInit {
 
         const typeDelay = Math.min((aiResponse.text.length) * 30, 6000);
         
-        // Smart Typing: Ovoz yoki Matn ekanligiga qarab harakat
         const typingAction = aiResponse.audioBuffer 
           ? new (require("telegram/tl").Api.SendMessageRecordAudioAction)()
           : new (require("telegram/tl").Api.SendMessageTypingAction)();
 
-        await this.client.invoke(new (require("telegram/tl").Api.messages.SetTyping)({
+        await client.invoke(new (require("telegram/tl").Api.messages.SetTyping)({
           peer: pending.peer,
           action: typingAction,
         })).catch(() => {});
@@ -311,14 +342,14 @@ export class TelegramService implements OnModuleInit {
         if (aiResponse.audioBuffer) {
            const tempFile = path.join(os.tmpdir(), `tts_${Date.now()}.mp3`);
            fs.writeFileSync(tempFile, aiResponse.audioBuffer);
-           const sent = await this.client.sendMessage(pending.peer, { file: tempFile, voiceNote: true } as any);
-           this.botSentMessageIds.add(sent.id);
+           const sent = await client.sendMessage(pending.peer, { file: tempFile, voiceNote: true } as any);
+           this.botSentMessageIds.add(`${account.id}_${sent.id}`);
         } else {
            const finalText = isFirstTime 
-             ? aiResponse.text + "\n\n— 🤖 Dilshodning AI yordamchisi"
+             ? aiResponse.text + `\n\n— 🤖 ${account.firstName}ning AI yordamchisi`
              : aiResponse.text;
-           const sent = await this.client.sendMessage(pending.peer, { message: finalText });
-           this.botSentMessageIds.add(sent.id);
+           const sent = await client.sendMessage(pending.peer, { message: finalText });
+           this.botSentMessageIds.add(`${account.id}_${sent.id}`);
         }
         
         this.logger.log(`✅ Javob yuborildi → ${pending.firstName ?? senderId}`);
