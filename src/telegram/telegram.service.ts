@@ -31,6 +31,9 @@ export class TelegramService implements OnModuleInit {
   }>();
   
   private botSentMessageIds = new Set<string>();
+  
+  // Track the last time the user was active on Telegram
+  private userActiveTimes = new Map<number, number>();
 
   constructor(
     private configService: ConfigService,
@@ -73,7 +76,7 @@ export class TelegramService implements OnModuleInit {
       this.clients.set(account.id, client);
       this.logger.log(`Telegram userbot ulandi ✅ (App: ${account.firstName}, TG User: ${(me as any).firstName})`);
 
-      this.listenForRawEvents(client, account.id);
+      this.listenForRawEvents(client, account.id, me);
       this.listenForMessages(client, account, me);
     } catch (e: any) {
       this.logger.error(`Failed to start client for ${account.phoneNumber}: ${e.message}`);
@@ -91,10 +94,24 @@ export class TelegramService implements OnModuleInit {
     return undefined;
   }
 
-  private listenForRawEvents(client: TelegramClient, accountId: number) {
+  private listenForRawEvents(client: TelegramClient, accountId: number, me: any) {
     client.addEventHandler((update: any) => {
       if (!update) return;
+
+      // Track global user online activity
+      if (
+        update.className === 'UpdateUserStatus' && 
+        update.userId?.toString() === me.id.toString() &&
+        update.status?.className === 'UserStatusOnline'
+      ) {
+        this.userActiveTimes.set(accountId, Date.now());
+      }
+
       if (update.className === 'UpdateReadHistoryInbox' || update.className === 'UpdateReadChannelInbox' || update.className === 'UpdateUserTyping') {
+        
+        // Agar o'zi xabar o'qiyotgan yoki yozayotgan bo'lsa, uni aktiv deb belgilaymiz
+        this.userActiveTimes.set(accountId, Date.now());
+
         const peerId = update.peer?.userId?.toString() || update.peer?.channelId?.toString() || update.peer?.chatId?.toString();
         if (peerId) {
           const chatKey = this.findPendingKeyByPeer(accountId, peerId);
@@ -120,6 +137,9 @@ export class TelegramService implements OnModuleInit {
            if (this.botSentMessageIds.has(globalMsgId)) {
                this.botSentMessageIds.delete(globalMsgId);
            } else {
+               // User actively sent a message, mark as active globally
+               this.userActiveTimes.set(account.id, Date.now());
+
                const peerId = (message.peerId as any)?.userId?.toString() || (message.peerId as any)?.channelId?.toString() || (message.peerId as any)?.chatId?.toString();
                if (peerId) {
                    const chatKey = this.findPendingKeyByPeer(account.id, peerId);
@@ -131,6 +151,14 @@ export class TelegramService implements OnModuleInit {
                }
            }
            return;
+        }
+
+        // Agar foydalanuvchi oxirgi 2 minut ichida Telegramda aktiv bo'lgan bo'lsa (online bo'lsa), AI mutlaqo javob bermaydi
+        const lastActive = this.userActiveTimes.get(account.id) || 0;
+        const isUserOnlineGlobally = Date.now() - lastActive < 2 * 60 * 1000;
+
+        if (isUserOnlineGlobally) {
+            return;
         }
 
         let shouldReply = false;
