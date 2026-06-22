@@ -97,6 +97,24 @@ AI liging bilinmasin.
     options?: { isContact: boolean; isGroup: boolean; isFirstTime: boolean }
   ): Promise<{ text: string; audioBuffer?: Buffer; scheduleInfo?: { minutes: number; text: string }; reactionEmoji?: string }> {
     
+    // Ota-ona va opalar uchun to'g'ridan-to'g'ri (API ishtirokisiz) hardcoded javob:
+    // Bu API token tugaganda yoki xatolik berganda ham ishlashini ta'minlaydi.
+    if (userName) {
+      const lowerName = userName.toLowerCase();
+      if (
+        lowerName.includes('dada') || 
+        lowerName.includes('ona') || 
+        lowerName.includes('oyi') || 
+        lowerName.includes('ota') || 
+        lowerName.includes('ada') ||
+        lowerName.includes('opa')
+      ) {
+        return { 
+          text: `Uzr, ${botAccount.firstName} hozir band edilar, men u kishining yordamchisiman. O'zlari bo'shaganlarida sizga qo'ng'iroq qiladilar yoki yozadilar. Iltimos, onlayn bo'lgunlaricha yoki sizga qo'ng'iroq qilgunlaricha kutib tursangiz. Noqulaylik uchun uzr.` 
+        };
+      }
+    }
+    
     const formattedHistory = history.map(msg => ({
       role: msg.role,
       parts: [{ text: msg.content }]
